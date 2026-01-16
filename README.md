@@ -91,7 +91,7 @@ sudo chmod +x /usr/bin/coredns
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/tsproxy.git
+git clone https://github.com/ethans-home-lab/tsproxy.git
 cd tsproxy
 
 # Edit configuration files to match your environment:
