@@ -1,11 +1,13 @@
 # CoreDNS configuration for dynamic .fgpu hostname resolution
-# Binds to the host's tailnet IP to serve clients on the home tailnet
-# Also binds to localhost for local testing
+# Binds to:
+#   - 127.0.0.1: localhost for local testing
+#   - 100.121.76.21: host's tailnet IP to serve clients on the home tailnet
+#   - 10.200.0.5: veth IP so the namespace can resolve .fgpu hostnames
 
 .:53 {
   # Bind to specific IPs only - do NOT bind to 0.0.0.0
   # Replace 100.121.76.21 with your host's tailnet IP
-  bind 127.0.0.1 100.121.76.21
+  bind 127.0.0.1 100.121.76.21 10.200.0.5
   
   log
   errors

@@ -11,18 +11,18 @@ echo "=== tsproxy Installation ==="
 
 # Check for root
 if [[ $EUID -ne 0 ]]; then
-   echo "This script must be run as root (sudo)" 
+   echo "This script must be run as root (sudo)"
    exit 1
 fi
 
 # Check dependencies
 echo "Checking dependencies..."
-for cmd in microsocks socat coredns; do
+for cmd in danted socat coredns; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "ERROR: $cmd not found. Please install it first."
-        echo "  microsocks: apt install microsocks  (or build from source)"
-        echo "  socat:      apt install socat"
-        echo "  coredns:    download from https://github.com/coredns/coredns/releases"
+        echo "  danted:   apt install dante-server"
+        echo "  socat:    apt install socat"
+        echo "  coredns:  download from https://github.com/coredns/coredns/releases"
         exit 1
     fi
 done
@@ -36,6 +36,10 @@ chmod +x /usr/local/sbin/setup-ts-netns.sh
 # Install systemd services
 echo "Installing systemd services..."
 cp "$REPO_DIR/systemd/"*.service /etc/systemd/system/
+
+# Install Dante config
+echo "Installing Dante configuration..."
+cp "$REPO_DIR/config/dante-tsFGPU.conf" /etc/
 
 # Install CoreDNS config
 echo "Installing CoreDNS configuration..."
@@ -55,7 +59,7 @@ systemctl daemon-reload
 echo "Enabling services..."
 systemctl enable ts-netns.service
 systemctl enable tailscaled-tsFGPU.service
-systemctl enable socks-tsFGPU.service
+systemctl enable dante-tsFGPU.service
 systemctl enable expose-socks-tsFGPU.service
 systemctl enable coredns-fgpu.service
 
@@ -75,7 +79,9 @@ echo "     --socket=/run/tailscale-tsFGPU/tailscaled.sock \\"
 echo "     up --authkey=tskey-xxxxx --accept-routes"
 echo ""
 echo "4. Start the SOCKS proxy and DNS services:"
-echo "   sudo systemctl start socks-tsFGPU expose-socks-tsFGPU coredns-fgpu"
+echo "   sudo systemctl start dante-tsFGPU expose-socks-tsFGPU coredns-fgpu"
 echo ""
-echo "5. Configure your client (see client/ directory)"
-
+echo "5. Save iptables rules for persistence:"
+echo "   sudo iptables-save | sudo tee /etc/iptables/rules.v4 > /dev/null"
+echo ""
+echo "6. Configure your client (see README.md for FoxyProxy and SSH setup)"

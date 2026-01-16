@@ -14,24 +14,29 @@ del_link_if_exists() {
   fi
 }
 
-# Figure out outbound (WAN) iface
-WAN_IF="$(ip route show default 2>/dev/null | awk '/default/ {print $5; exit}')"
+# Get ALL interfaces with default routes (handles multi-homed hosts)
+WAN_INTERFACES=$(ip route show default 2>/dev/null | awk '/default/ {print $5}' | sort -u)
 
-if [[ -z "${WAN_IF}" ]]; then
-  echo "setup-ts-netns: No default route found; cannot determine WAN_IF" >&2
+if [[ -z "${WAN_INTERFACES}" ]]; then
+  echo "setup-ts-netns: No default route found; cannot determine WAN interfaces" >&2
   exit 1
 fi
 
-echo "setup-ts-netns: Using WAN_IF=${WAN_IF}"
+echo "setup-ts-netns: Found WAN interfaces: ${WAN_INTERFACES//$'\n'/ }"
 
 # Ensure IPv4 forwarding
 sysctl -w net.ipv4.ip_forward=1 >/dev/null
 mkdir -p /etc/sysctl.d
 echo 'net.ipv4.ip_forward=1' >/etc/sysctl.d/99-ip-forward.conf
 
-# Ensure DNS for namespace
+# Configure DNS for namespace
+# Primary: CoreDNS on the veth (for .fgpu resolution)
+# Fallback: 8.8.8.8 (for general internet DNS)
 mkdir -p /etc/netns/tsFGPU
-echo 'nameserver 8.8.8.8' >/etc/netns/tsFGPU/resolv.conf
+cat > /etc/netns/tsFGPU/resolv.conf <<EOF
+nameserver 10.200.0.5
+nameserver 8.8.8.8
+EOF
 
 # ------------------------------
 #  tsFGPU namespace + veth
@@ -57,11 +62,17 @@ ip netns exec tsFGPU ip link set veth-fgpu-ns up
 ip netns exec tsFGPU ip route replace default via 10.200.0.5
 
 # ------------------------------
-#  NAT for 10.200.0.4/30 via WAN_IF
+#  NAT for 10.200.0.4/30 via ALL WAN interfaces
+#  This handles multi-homed hosts where traffic may egress
+#  through different interfaces based on routing metrics
 # ------------------------------
-if ! iptables -t nat -C POSTROUTING -s 10.200.0.4/30 -o "${WAN_IF}" -j MASQUERADE 2>/dev/null; then
-  iptables -t nat -A POSTROUTING -s 10.200.0.4/30 -o "${WAN_IF}" -j MASQUERADE
-fi
+for WAN_IF in ${WAN_INTERFACES}; do
+  if ! iptables -t nat -C POSTROUTING -s 10.200.0.4/30 -o "${WAN_IF}" -j MASQUERADE 2>/dev/null; then
+    iptables -t nat -A POSTROUTING -s 10.200.0.4/30 -o "${WAN_IF}" -j MASQUERADE
+    echo "setup-ts-netns: Added NAT rule for ${WAN_IF}"
+  else
+    echo "setup-ts-netns: NAT rule for ${WAN_IF} already exists"
+  fi
+done
 
 echo "setup-ts-netns: Completed successfully"
-
