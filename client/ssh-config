@@ -5,15 +5,21 @@
 #   <SUFFIX>: Your DNS suffix (e.g., work, corp, lab)
 #   <HOST_TAILNET_IP>: Your proxy host's Tailscale IP
 #   <SOCKS_PORT>: SOCKS5 port (default: 11080)
+#   <PROXY_USER>: SOCKS5 proxy username
+#   <PROXY_PASS>: SOCKS5 proxy password
+#
+# REQUIRES: ncat (from nmap package) for SOCKS5 authentication support
+#   macOS:  brew install nmap
+#   Ubuntu: apt install nmap
 
-# Route all .<SUFFIX> hosts through the SOCKS proxy
+# Route all .<SUFFIX> hosts through the SOCKS proxy with authentication
 # The dig command resolves the hostname locally (via /etc/resolver/<SUFFIX>),
-# then passes the resolved IP to nc for the SOCKS connection.
+# then passes the resolved IP to ncat for the authenticated SOCKS connection.
 Host *.<SUFFIX>
-  ProxyCommand bash -c 'nc -X 5 -x <HOST_TAILNET_IP>:<SOCKS_PORT> $(dig +short %h) %p'
+  ProxyCommand bash -c 'ncat --proxy-type socks5 --proxy <HOST_TAILNET_IP>:<SOCKS_PORT> --proxy-auth <PROXY_USER>:<PROXY_PASS> $(dig +short %h) %p'
 
 # Example: Define specific hosts for convenience
 # Host work-server
 #   HostName 10.0.0.50.<SUFFIX>
 #   User admin
-#   ProxyCommand bash -c 'nc -X 5 -x <HOST_TAILNET_IP>:<SOCKS_PORT> $(dig +short %h) %p'
+#   ProxyCommand bash -c 'ncat --proxy-type socks5 --proxy <HOST_TAILNET_IP>:<SOCKS_PORT> --proxy-auth <PROXY_USER>:<PROXY_PASS> $(dig +short %h) %p'
