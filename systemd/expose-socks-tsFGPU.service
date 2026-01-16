@@ -1,0 +1,15 @@
+[Unit]
+Description=Expose tsFGPU SOCKS on host tailnet IP
+After=network-online.target ts-netns.service socks-tsFGPU.service
+Wants=network-online.target
+Requires=ts-netns.service socks-tsFGPU.service
+
+[Service]
+Restart=always
+RestartSec=1
+# Listen on the host (home tailnet) and forward to the netns veth IP
+ExecStart=/usr/bin/socat TCP-LISTEN:11080,bind=100.121.76.21,fork,reuseaddr TCP:10.200.0.6:11080
+
+[Install]
+WantedBy=multi-user.target
+

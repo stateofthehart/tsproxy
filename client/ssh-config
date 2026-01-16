@@ -1,0 +1,17 @@
+# SSH config snippet for accessing hosts via the SOCKS proxy
+# Add to ~/.ssh/config
+
+# Route all .fgpu hosts through the SOCKS proxy
+Host *.fgpu
+  # Use netcat to connect through SOCKS5 proxy
+  ProxyCommand nc -X 5 -x 100.121.76.21:11080 %h %p
+  
+  # Alternative using ssh's built-in SOCKS support (OpenSSH 7.6+)
+  # ProxyCommand ssh -W %h:%p -o ProxyCommand="nc -X 5 -x 100.121.76.21:11080 %h %p" proxy-jump-host
+
+# Example direct host entry
+# Host gpu-node.fgpu
+#   HostName 10.100.10.141.fgpu
+#   User admin
+#   ProxyCommand nc -X 5 -x 100.121.76.21:11080 %h %p
+

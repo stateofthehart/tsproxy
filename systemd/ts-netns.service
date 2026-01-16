@@ -1,0 +1,13 @@
+[Unit]
+Description=Setup Tailscale namespaces and veth pairs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/setup-ts-netns.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+

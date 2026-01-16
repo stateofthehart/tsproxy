@@ -1,0 +1,31 @@
+# CoreDNS configuration for dynamic .fgpu hostname resolution
+# Binds to the host's tailnet IP to serve clients on the home tailnet
+# Also binds to localhost for local testing
+
+.:53 {
+  # Bind to specific IPs only - do NOT bind to 0.0.0.0
+  # Replace 100.121.76.21 with your host's tailnet IP
+  bind 127.0.0.1 100.121.76.21
+  
+  log
+  errors
+
+  # Synthesize A records for <ipv4>.fgpu.
+  # Example: 10.100.10.141.fgpu → 10.100.10.141
+  template IN A {
+    match ^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.fgpu\.$
+    answer "{{ .Name }} 60 IN A {{ index .Match 1 }}.{{ index .Match 2 }}.{{ index .Match 3 }}.{{ index .Match 4 }}"
+  }
+
+  # Return NXDOMAIN for anything else under .fgpu
+  template IN A {
+    match ^.*\.fgpu\.$
+    rcode NXDOMAIN
+  }
+
+  # Forward everything else to upstream resolvers
+  # Adjust these to your network's DNS servers
+  forward . 192.168.68.1 100.100.100.100
+  cache 30
+}
+
