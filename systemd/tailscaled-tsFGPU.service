@@ -1,15 +1,20 @@
+# Tailscale daemon for secondary tailnet in isolated namespace
+#
+# CUSTOMIZE: Replace <NAMESPACE> with your namespace name (e.g., tsWork, tsCorp)
+# Filename should match: tailscaled-<NAMESPACE>.service
+
 [Unit]
-Description=Tailscale daemon in tsFGPU netns (FarmGPU)
+Description=Tailscale daemon in <NAMESPACE> network namespace (secondary tailnet)
 After=network-online.target ts-netns.service
 Wants=network-online.target ts-netns.service
 Requires=ts-netns.service
 
 [Service]
 Type=simple
-ExecStartPre=/usr/sbin/ip netns exec tsFGPU ip link set lo up
-ExecStart=/usr/sbin/ip netns exec tsFGPU /usr/sbin/tailscaled \
-  --state=/var/lib/tailscale-tsFGPU/tailscaled.state \
-  --socket=/run/tailscale-tsFGPU/tailscaled.sock \
+ExecStartPre=/usr/sbin/ip netns exec <NAMESPACE> ip link set lo up
+ExecStart=/usr/sbin/ip netns exec <NAMESPACE> /usr/sbin/tailscaled \
+  --state=/var/lib/tailscale-<NAMESPACE>/tailscaled.state \
+  --socket=/run/tailscale-<NAMESPACE>/tailscaled.sock \
   --port=41642
 Restart=always
 

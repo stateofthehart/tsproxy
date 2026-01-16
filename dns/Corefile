@@ -1,33 +1,40 @@
-# CoreDNS configuration for dynamic .fgpu hostname resolution
+# CoreDNS configuration for dynamic DNS synthesis
+#
+# CUSTOMIZE THESE VALUES:
+#   <HOST_TAILNET_IP>: Your proxy host's Tailscale IP (e.g., 100.x.x.x)
+#   <SUFFIX>: DNS suffix for secondary tailnet (e.g., work, corp, lab)
+#   <UPSTREAM_DNS>: Your upstream DNS servers
+#
 # Binds to:
 #   - 127.0.0.1: localhost for local testing
-#   - 100.121.76.21: host's tailnet IP to serve clients on the home tailnet
-#   - 10.200.0.5: veth IP so the namespace can resolve .fgpu hostnames
+#   - <HOST_TAILNET_IP>: host's tailnet IP to serve clients on the primary tailnet
+#   - 10.200.0.5: veth IP so the namespace can resolve .<SUFFIX> hostnames
 
 .:53 {
   # Bind to specific IPs only - do NOT bind to 0.0.0.0
-  # Replace 100.121.76.21 with your host's tailnet IP
-  bind 127.0.0.1 100.121.76.21 10.200.0.5
-  
+  # Replace <HOST_TAILNET_IP> with your host's primary tailnet IP
+  bind 127.0.0.1 <HOST_TAILNET_IP> 10.200.0.5
+
   log
   errors
 
-  # Synthesize A records for <ipv4>.fgpu.
-  # Example: 10.100.10.141.fgpu → 10.100.10.141
+  # Synthesize A records for <ipv4>.<SUFFIX>
+  # Example: 10.0.0.50.work → 10.0.0.50
+  # Replace <SUFFIX> below (appears twice: in match and in the NXDOMAIN template)
   template IN A {
-    match ^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.fgpu\.$
+    match ^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.<SUFFIX>\.$
     answer "{{ .Name }} 60 IN A {{ index .Match 1 }}.{{ index .Match 2 }}.{{ index .Match 3 }}.{{ index .Match 4 }}"
   }
 
-  # Return NXDOMAIN for anything else under .fgpu
+  # Return NXDOMAIN for anything else under .<SUFFIX>
   template IN A {
-    match ^.*\.fgpu\.$
+    match ^.*\.<SUFFIX>\.$
     rcode NXDOMAIN
   }
 
   # Forward everything else to upstream resolvers
-  # Adjust these to your network's DNS servers
-  forward . 192.168.68.1 100.100.100.100
+  # Replace with your network's DNS servers
+  forward . <UPSTREAM_DNS_1> <UPSTREAM_DNS_2>
   cache 30
 }
 

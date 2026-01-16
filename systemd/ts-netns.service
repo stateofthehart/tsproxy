@@ -1,5 +1,10 @@
+# Network namespace setup for isolated secondary tailnet
+#
+# Runs setup-ts-netns.sh which creates the namespace, veth pairs, and NAT rules.
+# Edit /usr/local/sbin/setup-ts-netns.sh to configure namespace name and IPs.
+
 [Unit]
-Description=Setup Tailscale namespaces and veth pairs
+Description=Setup network namespace and veth pairs for secondary tailnet
 After=network-online.target
 Wants=network-online.target
 

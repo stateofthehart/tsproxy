@@ -1,11 +1,17 @@
+# Dante SOCKS5 proxy in isolated namespace
+#
+# CUSTOMIZE: Replace <NAMESPACE> with your namespace name (e.g., tsWork, tsCorp)
+# Filename should match: dante-<NAMESPACE>.service
+# Requires: /etc/dante-<NAMESPACE>.conf
+
 [Unit]
-Description=Dante SOCKS5 proxy inside tsFGPU namespace
-After=tailscaled-tsFGPU.service
-Requires=tailscaled-tsFGPU.service
+Description=Dante SOCKS5 proxy inside <NAMESPACE> namespace
+After=tailscaled-<NAMESPACE>.service
+Requires=tailscaled-<NAMESPACE>.service
 
 [Service]
 Type=simple
-ExecStart=/usr/sbin/ip netns exec tsFGPU /usr/sbin/danted -f /etc/dante-tsFGPU.conf -N 1
+ExecStart=/usr/sbin/ip netns exec <NAMESPACE> /usr/sbin/danted -f /etc/dante-<NAMESPACE>.conf -N 1
 Restart=on-failure
 RestartSec=1
 

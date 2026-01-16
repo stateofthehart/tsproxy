@@ -1,16 +1,19 @@
 # SSH config snippet for accessing hosts via the SOCKS proxy
 # Add to ~/.ssh/config
+#
+# CUSTOMIZE:
+#   <SUFFIX>: Your DNS suffix (e.g., work, corp, lab)
+#   <HOST_TAILNET_IP>: Your proxy host's Tailscale IP
+#   <SOCKS_PORT>: SOCKS5 port (default: 11080)
 
-# Route all .fgpu hosts through the SOCKS proxy
-# Note: We use dig to resolve the hostname locally because microsocks
-# doesn't support SOCKS5 remote hostname resolution (DOMAINNAME type).
-# The dig command queries your local DNS (which routes .fgpu to CoreDNS),
+# Route all .<SUFFIX> hosts through the SOCKS proxy
+# The dig command resolves the hostname locally (via /etc/resolver/<SUFFIX>),
 # then passes the resolved IP to nc for the SOCKS connection.
-Host *.fgpu
-  ProxyCommand bash -c 'nc -X 5 -x 100.121.76.21:11080 $(dig +short %h) %p'
+Host *.<SUFFIX>
+  ProxyCommand bash -c 'nc -X 5 -x <HOST_TAILNET_IP>:<SOCKS_PORT> $(dig +short %h) %p'
 
 # Example: Define specific hosts for convenience
-# Host gpu-server
-#   HostName 10.100.10.141.fgpu
+# Host work-server
+#   HostName 10.0.0.50.<SUFFIX>
 #   User admin
-#   ProxyCommand bash -c 'nc -X 5 -x 100.121.76.21:11080 $(dig +short %h) %p'
+#   ProxyCommand bash -c 'nc -X 5 -x <HOST_TAILNET_IP>:<SOCKS_PORT> $(dig +short %h) %p'

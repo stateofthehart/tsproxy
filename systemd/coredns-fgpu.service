@@ -1,5 +1,11 @@
+# CoreDNS for dynamic DNS synthesis (IP.<SUFFIX> → IP)
+#
+# CUSTOMIZE: <SUFFIX> is your DNS suffix (e.g., work, corp, lab)
+# Filename should match: coredns-<SUFFIX>.service
+# Requires: /etc/coredns/Corefile configured with your <SUFFIX>
+
 [Unit]
-Description=CoreDNS (dynamic .fgpu IP synthesizer)
+Description=CoreDNS (dynamic .<SUFFIX> IP synthesizer)
 After=network-online.target
 Wants=network-online.target
 

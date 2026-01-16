@@ -1,14 +1,23 @@
+# Expose SOCKS5 proxy from namespace to primary tailnet
+#
+# CUSTOMIZE:
+#   <NAMESPACE>: Your namespace name (e.g., tsWork, tsCorp)
+#   <HOST_TAILNET_IP>: Your proxy host's Tailscale IP on primary tailnet
+#   <SOCKS_PORT>: SOCKS5 port (default: 11080)
+#   <VETH_NS_IP>: Namespace veth IP (default: 10.200.0.6)
+# Filename should match: expose-socks-<NAMESPACE>.service
+
 [Unit]
-Description=Expose tsFGPU SOCKS on host tailnet IP
-After=network-online.target ts-netns.service socks-tsFGPU.service
+Description=Expose <NAMESPACE> SOCKS5 proxy on host tailnet IP
+After=network-online.target ts-netns.service dante-<NAMESPACE>.service
 Wants=network-online.target
-Requires=ts-netns.service socks-tsFGPU.service
+Requires=ts-netns.service dante-<NAMESPACE>.service
 
 [Service]
 Restart=always
 RestartSec=1
-# Listen on the host (home tailnet) and forward to the netns veth IP
-ExecStart=/usr/bin/socat TCP-LISTEN:11080,bind=100.121.76.21,fork,reuseaddr TCP:10.200.0.6:11080
+# Listen on primary tailnet IP and forward to namespace veth IP
+ExecStart=/usr/bin/socat TCP-LISTEN:<SOCKS_PORT>,bind=<HOST_TAILNET_IP>,fork,reuseaddr TCP:<VETH_NS_IP>:<SOCKS_PORT>
 
 [Install]
 WantedBy=multi-user.target
