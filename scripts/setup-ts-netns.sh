@@ -13,9 +13,9 @@ set -euo pipefail
 # ------------------------------
 
 # Configuration - EDIT THESE FOR YOUR SETUP
-NAMESPACE="tsFGPU"
-VETH_HOST="veth-fgpu-host"
-VETH_NS="veth-fgpu-ns"
+NAMESPACE="tsWORK"
+VETH_HOST="veth-work-host"
+VETH_NS="veth-work-ns"
 VETH_HOST_IP="10.200.0.5"
 VETH_NS_IP="10.200.0.6"
 VETH_SUBNET="10.200.0.4/30"
