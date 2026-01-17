@@ -13,7 +13,8 @@ set -euo pipefail
 # ------------------------------
 
 # Configuration - EDIT THESE FOR YOUR SETUP
-NAMESPACE="tsWORK"
+# Example uses "work" suffix - change to match your secondary tailnet
+NAMESPACE="tswork"
 VETH_HOST="veth-work-host"
 VETH_NS="veth-work-ns"
 VETH_HOST_IP="10.200.0.5"

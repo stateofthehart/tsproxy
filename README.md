@@ -20,12 +20,14 @@ Before installation, customize these values for your environment:
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `SUFFIX` | DNS suffix for secondary tailnet (used in hostnames) | `work`, `corp`, `lab` |
-| `NAMESPACE` | Linux namespace name (typically `ts<SUFFIX>`) | `tsWork`, `tsCorp` |
+| `NAMESPACE` | Linux namespace name (typically `ts<suffix>`) | `tswork`, `tscorp` |
 | `HOST_TAILNET_IP` | Your proxy host's IP on the primary tailnet | `100.x.x.x` (from `tailscale ip`) |
 | `VETH_HOST_IP` | Host side of veth pair | `10.200.0.5` (default) |
 | `VETH_NS_IP` | Namespace side of veth pair | `10.200.0.6` (default) |
 | `SOCKS_PORT` | SOCKS5 proxy port | `11080` (default) |
 | `UPSTREAM_DNS` | Your network's DNS servers | `192.168.1.1`, `8.8.8.8` |
+
+The repository includes example files using `work`/`tswork`. Copy and customize them for your setup.
 
 ## How It Works
 
@@ -512,16 +514,201 @@ sudo systemctl restart dante-<NAMESPACE>
 
 5. **Use separate auth keys**: The secondary tailnet should use its own Tailscale auth key, not your personal login, so it can be revoked independently.
 
-## Adding Another Tailnet
+## Multiple Namespaces / Multiple Tailnets
 
-To add a third tailnet, duplicate the pattern:
+A single proxy host can connect to multiple secondary tailnets simultaneously. Each tailnet runs in its own isolated namespace with dedicated veth pairs, SOCKS ports, and DNS suffixes.
 
-1. Choose a new suffix (e.g., `lab`) and namespace name (e.g., `tsLab`)
-2. Copy and modify `setup-ts-netns.sh` with new namespace name
-3. Use a different veth IP range (e.g., `10.200.0.9/30` and `10.200.0.10/30`)
-4. Create new systemd services with the new namespace name
-5. Add a new CoreDNS zone for the new suffix
-6. Use a different SOCKS port (e.g., `11081`)
+### Network Planning
+
+Each namespace requires a unique `/30` subnet for its veth pair. Plan your IP ranges:
+
+| Namespace | Suffix | Veth Host IP | Veth NS IP | Subnet | SOCKS Port |
+|-----------|--------|--------------|------------|--------|------------|
+| `tswork` | `work` | 10.200.0.5 | 10.200.0.6 | 10.200.0.4/30 | 11080 |
+| `tscorp` | `corp` | 10.200.0.9 | 10.200.0.10 | 10.200.0.8/30 | 11081 |
+| `tslab` | `lab` | 10.200.0.13 | 10.200.0.14 | 10.200.0.12/30 | 11082 |
+
+### Architecture with Multiple Namespaces
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              Proxy Host                                          │
+│                                                                                  │
+│  Host Namespace (primary tailnet)                                                │
+│  ├── tailscale0: 100.x.x.x (primary)                                             │
+│  ├── veth-work-host: 10.200.0.5/30  ◄──► tswork namespace (work tailnet)         │
+│  ├── veth-corp-host: 10.200.0.9/30  ◄──► tscorp namespace (corp tailnet)         │
+│  └── veth-lab-host: 10.200.0.13/30  ◄──► tslab namespace (lab tailnet)           │
+│                                                                                  │
+│  Services:                                                                       │
+│  ├── expose-socks-tswork: 100.x.x.x:11080 → 10.200.0.6:11080                     │
+│  ├── expose-socks-tscorp: 100.x.x.x:11081 → 10.200.0.10:11081                    │
+│  ├── expose-socks-tslab:  100.x.x.x:11082 → 10.200.0.14:11082                    │
+│  └── coredns: *.work, *.corp, *.lab DNS synthesis                                │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Adding a New Namespace
+
+#### Step 1: Create Setup Script
+
+Copy and modify the setup script for your new namespace:
+
+```bash
+# Copy template
+cp scripts/setup-ts-netns.sh scripts/setup-ts-netns-corp.sh
+
+# Edit the configuration section:
+NAMESPACE="tscorp"
+VETH_HOST="veth-corp-host"
+VETH_NS="veth-corp-ns"
+VETH_HOST_IP="10.200.0.9"
+VETH_NS_IP="10.200.0.10"
+VETH_SUBNET="10.200.0.8/30"
+```
+
+#### Step 2: Create Systemd Services
+
+Copy and customize each service file, replacing values:
+
+**tailscaled-tscorp.service:**
+```bash
+cp systemd/tailscaled-tswork.service systemd/tailscaled-tscorp.service
+# Edit: Replace all instances of "tswork" with "tscorp"
+```
+
+**dante-tscorp.service:**
+```bash
+cp systemd/dante-tswork.service systemd/dante-tscorp.service
+# Edit: Replace "tswork" with "tscorp"
+```
+
+**expose-socks-tscorp.service:**
+```bash
+cp systemd/expose-socks-tswork.service systemd/expose-socks-tscorp.service
+# Edit: Replace "tswork" with "tscorp"
+# Edit: Change port from 11080 to 11081
+# Edit: Change veth IP from 10.200.0.6 to 10.200.0.10
+```
+
+**coredns-corp.service:** (or add to existing Corefile)
+```bash
+cp systemd/coredns-work.service systemd/coredns-corp.service
+# Edit: Replace "work" with "corp" in description
+```
+
+#### Step 3: Create Dante Config
+
+```bash
+cp config/dante-tswork.conf config/dante-tscorp.conf
+# Edit: Change internal IP to 10.200.0.10
+# Edit: Change port to 11081 (if using different port)
+```
+
+#### Step 4: Update CoreDNS
+
+You can either run separate CoreDNS instances per suffix, or use a single Corefile with multiple template blocks:
+
+```
+# /etc/coredns/Corefile - Multiple suffixes in one file
+
+.:53 {
+  bind 127.0.0.1 <HOST_TAILNET_IP> 10.200.0.5 10.200.0.9 10.200.0.13
+
+  log
+  errors
+
+  # Work tailnet
+  template IN A {
+    match ^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.work\.$
+    answer "{{ .Name }} 60 IN A {{ index .Match 1 }}.{{ index .Match 2 }}.{{ index .Match 3 }}.{{ index .Match 4 }}"
+  }
+
+  # Corp tailnet
+  template IN A {
+    match ^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.corp\.$
+    answer "{{ .Name }} 60 IN A {{ index .Match 1 }}.{{ index .Match 2 }}.{{ index .Match 3 }}.{{ index .Match 4 }}"
+  }
+
+  # Lab tailnet
+  template IN A {
+    match ^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.lab\.$
+    answer "{{ .Name }} 60 IN A {{ index .Match 1 }}.{{ index .Match 2 }}.{{ index .Match 3 }}.{{ index .Match 4 }}"
+  }
+
+  # NXDOMAIN for non-IP hostnames
+  template IN A {
+    match ^.*\.(work|corp|lab)\.$
+    rcode NXDOMAIN
+  }
+
+  forward . 192.168.1.1 8.8.8.8
+  cache 30
+}
+```
+
+#### Step 5: Install and Start
+
+```bash
+# Install the new namespace's setup script
+sudo cp scripts/setup-ts-netns-corp.sh /usr/local/sbin/
+
+# Install new systemd services
+sudo cp systemd/*corp* /etc/systemd/system/
+sudo cp config/dante-tscorp.conf /etc/
+
+# Create state directories
+sudo mkdir -p /var/lib/tailscale-tscorp /run/tailscale-tscorp
+
+# Reload and start
+sudo systemctl daemon-reload
+sudo systemctl start ts-netns  # Or run setup script directly
+sudo /usr/local/sbin/setup-ts-netns-corp.sh  # Set up the new namespace
+sudo systemctl enable --now tailscaled-tscorp dante-tscorp expose-socks-tscorp
+
+# Authenticate to the new tailnet
+sudo ip netns exec tscorp tailscale \
+  --socket=/run/tailscale-tscorp/tailscaled.sock \
+  up --authkey=tskey-xxx --accept-routes
+
+# Save iptables (includes new NAT rules)
+sudo iptables-save | sudo tee /etc/iptables/rules.v4 > /dev/null
+```
+
+#### Step 6: Client Configuration
+
+Add the new suffix to your client:
+
+**macOS DNS resolver:**
+```bash
+sudo tee /etc/resolver/corp <<EOF
+nameserver <HOST_TAILNET_IP>
+EOF
+```
+
+**FoxyProxy:** Add a new proxy entry for port 11081 with pattern `*corp*`
+
+**SSH config:**
+```
+Host *.corp
+  ProxyCommand bash -c 'ncat --proxy-type socks5 --proxy <HOST_TAILNET_IP>:11081 --proxy-auth user:pass $(dig +short %h) %p'
+```
+
+### Managing Multiple Namespaces
+
+```bash
+# Check all namespace tailscale status
+for ns in tswork tscorp tslab; do
+  echo "=== $ns ==="
+  sudo ip netns exec $ns tailscale --socket=/run/tailscale-$ns/tailscaled.sock status
+done
+
+# List all namespaces
+ip netns list
+
+# Check all proxy services
+systemctl status dante-tswork dante-tscorp dante-tslab
+```
 
 ## License
 
