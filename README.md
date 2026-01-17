@@ -184,9 +184,38 @@ dig @<HOST_TAILNET_IP> 10.0.0.1.<SUFFIX>
 
 ### Step 2: Browser Proxy
 
-You can use either a browser extension (recommended) or a system-wide PAC file.
+Use a browser extension to route `*.<SUFFIX>` traffic through the SOCKS5 proxy.
 
-#### Option A: FoxyProxy Extension (Recommended for Chrome)
+**Important**: Chrome does not support SOCKS5 proxy authentication. If you enable authentication on the proxy (see [Security Considerations](#security-considerations)), you must use Firefox.
+
+#### Option A: Firefox + FoxyProxy (Recommended - supports authentication)
+
+1. Install [FoxyProxy Standard](https://addons.mozilla.org/en-US/firefox/addon/foxyproxy-standard/) from Firefox Add-ons
+
+2. Click the FoxyProxy icon → **Options**
+
+3. Click **Add** to create a new proxy:
+   - **Title**: `<SUFFIX>-tailnet`
+   - **Type**: `SOCKS5`
+   - **Hostname**: `<HOST_TAILNET_IP>`
+   - **Port**: `11080`
+   - **Username**: Your proxy username (if authentication enabled)
+   - **Password**: Your proxy password (if authentication enabled)
+   - **Important**: Check **"Send DNS through SOCKS5 proxy"**
+
+4. Add a pattern to match your suffix:
+   - Go to **Patterns** tab
+   - Click **Add**
+   - **Name**: `Work suffix`
+   - **Pattern**: `*<SUFFIX>*`
+   - **Type**: `Wildcard`
+   - **Include/Exclude**: `Include`
+
+5. **Save** and click the FoxyProxy icon → Select **"Proxy by Patterns"**
+
+#### Option B: Chrome + FoxyProxy (no authentication support)
+
+Chrome's SOCKS5 implementation does not support username/password authentication. Use this option only if you're running the proxy without authentication.
 
 1. Install [FoxyProxy Standard](https://chrome.google.com/webstore/detail/foxyproxy-standard/gcknhkkoolaabfmlnjonogaaifnjlfnp) from the Chrome Web Store
 
@@ -197,21 +226,15 @@ You can use either a browser extension (recommended) or a system-wide PAC file.
    - **Type**: `SOCKS5`
    - **Hostname**: `<HOST_TAILNET_IP>`
    - **Port**: `11080`
-   - **Important**: Check **"Proxy DNS"** (this sends hostnames to the proxy for resolution)
+   - **Important**: Check **"Proxy DNS"**
 
 4. Add a pattern to match your suffix:
    - Click **Add** under Patterns
    - **Pattern**: `*<SUFFIX>*`
    - **Type**: `Wildcard`
    - **Include**: ON (not Exclude)
-   - You do NOT need any exclude patterns - unmatched URLs automatically go direct
 
-5. **Enable pattern-based proxying**:
-   - Click the FoxyProxy icon in Chrome's toolbar
-   - Select **"Proxy by Patterns"** (NOT "Use <SUFFIX>-tailnet for all URLs")
-   - The icon should change color to indicate it's active
-
-Now only URLs containing your suffix will go through the proxy. All other traffic goes direct.
+5. Click the FoxyProxy icon → Select **"Proxy by Patterns"**
 
 **Alternative pattern**: For secondary LAN IPs that don't overlap with your primary network, you can add patterns like `*://10.100.*` to proxy those IPs directly without the suffix.
 
@@ -248,6 +271,8 @@ Configure macOS to use the PAC file:
 
 Add to `~/.ssh/config`:
 
+#### Without proxy authentication:
+
 ```
 # Route all .<SUFFIX> hosts through the SOCKS proxy
 # dig resolves the hostname locally, then nc connects via the proxy
@@ -261,7 +286,23 @@ Host secondary-server
   ProxyCommand nc -X 5 -x <HOST_TAILNET_IP>:11080 %h %p
 ```
 
-**How it works**: The `dig +short %h` resolves the hostname locally using your Mac's DNS resolver (which queries CoreDNS via `/etc/resolver/<SUFFIX>`), then passes the resolved IP to `nc` for the SOCKS connection.
+#### With proxy authentication:
+
+The standard `nc` command doesn't support SOCKS5 authentication. Use `ncat` (from the nmap package) instead:
+
+```bash
+# Install ncat
+# macOS:  brew install nmap
+# Ubuntu: apt install nmap
+```
+
+```
+# Route all .<SUFFIX> hosts through the authenticated SOCKS proxy
+Host *.<SUFFIX>
+  ProxyCommand bash -c 'ncat --proxy-type socks5 --proxy <HOST_TAILNET_IP>:11080 --proxy-auth <USER>:<PASS> $(dig +short %h) %p'
+```
+
+**How it works**: The `dig +short %h` resolves the hostname locally using your Mac's DNS resolver (which queries CoreDNS via `/etc/resolver/<SUFFIX>`), then passes the resolved IP to `nc`/`ncat` for the SOCKS connection.
 
 ## Usage Examples
 
@@ -376,11 +417,100 @@ Some security-conscious applications (like OPNsense) may show "DNS Rebind Attack
 
 ## Security Considerations
 
-- **Network Isolation**: Each tailnet runs in a completely separate namespace with its own routing table
-- **No Direct Routing**: Traffic must go through the SOCKS proxy - no raw routing between tailnets
-- **Minimal Exposure**: Only the SOCKS proxy and DNS are exposed to the primary tailnet
-- **Restricted Binding**: Services bind to specific IPs, not 0.0.0.0
-- **Tailscale Auth**: Each tailnet uses separate Tailscale authentication
+### Architecture Security
+
+| Layer | Protection |
+|-------|------------|
+| **Network Isolation** | Each tailnet runs in a completely separate Linux namespace with its own routing table. No direct path exists between tailnets. |
+| **No Direct Routing** | Traffic must go through the SOCKS proxy - no raw IP routing between tailnets. |
+| **Minimal Exposure** | Only the SOCKS proxy (port 11080) and DNS (port 53) are exposed to the primary tailnet. |
+| **Restricted Binding** | Services bind to specific Tailscale IPs, not `0.0.0.0`. The proxy is not accessible from the internet. |
+| **Tailscale Auth** | Each tailnet uses separate Tailscale authentication with WireGuard encryption. |
+
+### SOCKS5 Proxy Authentication
+
+The Dante proxy can be configured with or without username/password authentication.
+
+#### Configuration A: No Authentication (Default)
+
+```
+socksmethod: none
+```
+
+**Trust model**: Any device on your primary tailnet that knows the proxy IP:port can use it.
+
+**When this is acceptable**:
+- Your primary tailnet contains only your personal, trusted devices
+- You trust all users/devices that can join your primary tailnet
+- You rely on Tailscale's device authentication as the security boundary
+
+**Attack surface**:
+- If an attacker compromises any device on your primary tailnet, they can access secondary tailnet resources through the proxy
+- Tailscale ACLs on the primary tailnet can limit which devices can reach the proxy host
+
+#### Configuration B: Username/Password Authentication
+
+```
+socksmethod: username
+```
+
+To enable authentication:
+
+```bash
+# 1. Create a system user for proxy auth
+sudo useradd -r -s /usr/sbin/nologin proxyuser
+sudo passwd proxyuser
+
+# 2. Update Dante config
+sudo sed -i 's/socksmethod: none/socksmethod: username/' /etc/dante-<NAMESPACE>.conf
+
+# 3. Restart the proxy
+sudo systemctl restart dante-<NAMESPACE>
+```
+
+**Trust model**: Devices must both (1) be on your primary tailnet AND (2) know the proxy credentials.
+
+**When to use this**:
+- Your primary tailnet has devices you don't fully control
+- Multiple people share your primary tailnet
+- You want defense-in-depth beyond Tailscale authentication
+- Compliance requirements mandate authentication at each layer
+
+**Attack surface**:
+- If an attacker compromises your primary tailnet, they must still brute-force or steal the proxy credentials
+- Credentials are transmitted inside the already-encrypted Tailscale tunnel
+- Password can be rate-limited via PAM/fail2ban if desired
+
+**Client compatibility**:
+| Client | Auth Support |
+|--------|--------------|
+| Firefox + FoxyProxy | Yes |
+| Chrome + FoxyProxy | **No** - Chrome doesn't support SOCKS5 auth |
+| SSH with `ncat` | Yes (`--proxy-auth user:pass`) |
+| SSH with `nc` | No |
+| curl | Yes (`socks5h://user:pass@host:port`) |
+
+### Potential Attack Vectors
+
+| Attack | Without Auth | With Auth |
+|--------|--------------|-----------|
+| Malicious device joins primary tailnet | Can use proxy freely | Must brute-force credentials |
+| Proxy host compromised | Full access to both tailnets | Full access to both tailnets |
+| Credential theft (keylogger, etc.) | N/A | Attacker gains proxy access |
+| Network sniffing on primary tailnet | Cannot sniff (WireGuard encrypted) | Cannot sniff (WireGuard encrypted) |
+| Brute-force proxy credentials | N/A | Possible, but requires tailnet access first |
+
+### Recommendations
+
+1. **Minimal setup (personal use)**: No authentication is reasonable if your primary tailnet only contains your own devices. Tailscale's device authentication is already strong.
+
+2. **Shared tailnet**: Enable authentication if others can join your primary tailnet.
+
+3. **High-security environments**: Enable authentication + consider Tailscale ACLs to restrict which devices can reach the proxy host.
+
+4. **Protect the proxy host**: The proxy host is the bridge between networks. Keep it updated, use strong SSH keys, and monitor for compromise.
+
+5. **Use separate auth keys**: The secondary tailnet should use its own Tailscale auth key, not your personal login, so it can be revoked independently.
 
 ## Adding Another Tailnet
 
