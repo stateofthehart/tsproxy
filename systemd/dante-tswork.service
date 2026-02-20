@@ -1,6 +1,6 @@
 # Dante SOCKS5 proxy in isolated namespace
 #
-# CUSTOMIZE: Replace <NAMESPACE> with your namespace name (e.g., tsWork, tsCorp)
+# CUSTOMIZE: Replace <NAMESPACE> with your namespace name (e.g., tswork, tscorp)
 # Filename should match: dante-<NAMESPACE>.service
 # Requires: /etc/dante-<NAMESPACE>.conf
 
@@ -11,9 +11,25 @@ Requires=tailscaled-<NAMESPACE>.service
 
 [Service]
 Type=simple
+
+# Wait for tailscale0 to get an IPv4 address before starting Dante.
+# tailscaled reports "started" to systemd before the interface is ready,
+# causing Dante to fail with "no IPv4 address on external interface".
+ExecStartPre=/bin/bash -c '\
+  echo "Waiting for tailscale0 IPv4 in <NAMESPACE> namespace..."; \
+  for i in $(seq 1 60); do \
+    if /usr/sbin/ip netns exec <NAMESPACE> ip -4 addr show tailscale0 2>/dev/null | grep -q "inet "; then \
+      echo "tailscale0 is ready"; \
+      exit 0; \
+    fi; \
+    sleep 2; \
+  done; \
+  echo "Timed out waiting for tailscale0 IPv4"; \
+  exit 1'
+
 ExecStart=/usr/sbin/ip netns exec <NAMESPACE> /usr/sbin/danted -f /etc/dante-<NAMESPACE>.conf -N 1
 Restart=on-failure
-RestartSec=1
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
